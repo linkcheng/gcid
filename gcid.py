@@ -1,6 +1,12 @@
 #!/usr/bin/env/ python
 
 from gittle import Gittle
+import subprocess
+import os
+import re
+
+
+Path = '/home/zhenglong/share/mygithub/python_demo/'
 
 class Gcid():
     def __init__(self, name = '', pre_id = '-', now_id = '-'):
@@ -27,15 +33,16 @@ class Gcid():
         self.__now_id = now_id
 
     def show(self):
-        print '|{0:<45}|'.format(self.__name),
-        print '{0:<45}'.format(self.__pre_id),
-        print '|{0:<45}|'.format(self.__now_id)
+        print '|{0:<40}|'.format(self.__name),
+        print '{0:<40}'.format(self.__pre_id),
+        print '|{0:<40}|'.format(self.__now_id)
 
 
 def printInfo(path, pre, now):
-    print '|{0:<45}|'.format(path),
-    print '{0:<45}'.format(pre),
-    print '|{0:<45}|'.format(now)
+    print '|{0:<40}|'.format(path),
+    print '{0:<40}'.format(pre),
+    print '|{0:<40}|'.format(now)
+
 
 def getGcid(file_name, gcids = []):
     gcid = None
@@ -49,33 +56,37 @@ def getGcid(file_name, gcids = []):
 
     return gcid
 
+
+def getIds(f):
+    os.chdir(Path)
+    cmd = 'git log -2 "' + f + '" | grep commit'
+    #print 'CMD = %s' % cmd
+    ids = ['-', ]
+
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    for line in p.stdout.readlines():
+        #print re.split(r'commit ', line)[1][:-2] ,
+        ids.insert(0, re.split(r'commit ', line)[1][:-2])
+    retval = p.wait()
+    return ids
+
 def test():
-    repo = Gittle('/home/zhenglong/share/mygithub/python_demo')
-    #repo = Gittle('/home/zhenglong/proj/17cy_0310/packages/QmlApps/Lexus/Navi')
-    coms = repo.commits()
+    repo = Gittle(Path)
+    files = list(repo.tracked_files)
     gcids = []
  
     printInfo('path', 'comid-pre', 'comid-now')
 
-    for com in coms:
-        fileInfo = repo.get_commit_files(com)
-        files = fileInfo.keys()
+    for f in files:
+        gcid = getGcid(f, gcids)
         
-        for f in files:
-            gcid = getGcid(f, gcids)
-            gcid.show()
+        ids = getIds(f)
+        
+        gcid.setNowId(ids[0])
+        gcid.setPreId(ids[1])
 
-            if gcid.getNowId() == '-':
-                gcid.setNowId(com)
-            else:
-                if gcid.getPreId() == '-':
-                    gcid.setPreId(com)
-            print gcid.show()
-            print '==========++++++++++++++++++++++==================='
-        print '**********+++++++++++++++++++++++++++*****************'
-
-    #for g in gcids:
-    #    g.show()
+    for g in gcids:
+        g.show()
 
 
 if __name__ == '__main__':

@@ -1,4 +1,4 @@
-#!/usr/bin/env/ python
+#!/usr/bin/env python
 
 from gittle import Gittle
 import subprocess
@@ -44,42 +44,64 @@ def printInfo(path, pre, now):
     print '|{0:<40}|'.format(now)
 
 
+def getPwd():
+    return os.getcwd()
+
+
+def getRepo(path):
+    from dulwich.errors import NotGitRepository
+
+    repo = None
+    try:
+        repo = Gittle(path)
+    except NotGitRepository as e:
+        print e
+    
+    return repo
+
+
 def getGcid(file_name, gcids = []):
-    gcid = None
-    for g in gcids:
-        if g.getName() == file_name:
-            gcid = g
-            break
-    else:
-        gcid = Gcid(file_name)
-        gcids.append(gcid)
+    gcid = Gcid(file_name)
+    gcids.append(gcid)
 
     return gcid
 
 
 def getIds(f):
-    os.chdir(Path)
     cmd = 'git log -2 "' + f + '" | grep commit'
     #print 'CMD = %s' % cmd
     ids = ['-', ]
 
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    for line in p.stdout.readlines():
-        #print re.split(r'commit ', line)[1][:-2] ,
-        ids.insert(0, re.split(r'commit ', line)[1][:-2])
-    retval = p.wait()
+
+    ids.insert(0, re.split(r'commit ', p.stdout.readline())[1][:-1])
+
+    p.wait()
     return ids
 
+
 def test():
-    repo = Gittle(Path)
+    path = getPwd()
+    #path = Path
+    print '=================current path : %s =====================' % path
+
+    repo = getRepo(path)
+
+    if not repo:
+        return
+    else:
+        os.chdir(path)
+
     files = list(repo.tracked_files)
+    print '===================tracked files count = %d ===================' % len(files) 
+    
     gcids = []
  
-    printInfo('path', 'comid-pre', 'comid-now')
+    #printInfo('path', 'comid-pre', 'comid-now')
 
     for f in files:
+        print 'file name = %s' % f
         gcid = getGcid(f, gcids)
-        
         ids = getIds(f)
         
         gcid.setNowId(ids[0])
@@ -88,6 +110,8 @@ def test():
     for g in gcids:
         g.show()
 
+    print '===================tracked files count = %d ===================' % len(files) 
+    print '===================commit ids count = %d ===================' % len(gcids) 
 
 if __name__ == '__main__':
     test()

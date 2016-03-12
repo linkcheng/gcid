@@ -33,9 +33,9 @@ class Gcid():
         self.__now_id = now_id
 
     def show(self):
-        print '|{0:<40}'.format(self.__name),
+        print '|{0:<64}'.format(self.__name[-63:]),
         print '|{0:<40}'.format(self.__pre_id),
-        print '|{0:<40}|'.format(self.__now_id)
+        print '|{0:<41}|\n'.format(self.__now_id)
 
 
 def usage():  
@@ -46,9 +46,9 @@ def usage():
 
 
 def printInfo(path, pre, now):
-    print '|{0:<40}|'.format(path),
-    print '{0:<40}'.format(pre),
-    print '|{0:<40}|'.format(now)
+    print '|{0:<64}'.format(path),
+    print '|{0:<40}'.format(pre),
+    print '|{0:<41}|\n'.format(now)
 
 
 def getPwd():
@@ -80,10 +80,12 @@ def getIds(f):
     ids = ['-', ]
 
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-
+    
+    pos = 0
     for i in p.stdout:
         if re.match(r'^commit ', i):
-            ids.insert(0, re.split(r'commit ', i)[1][:-1])
+            ids.insert(pos, re.split(r'commit ', i)[1][:-1])
+            pos += 1
 
     p.wait()
     return ids
@@ -98,11 +100,7 @@ def createGcids(files, gcids):
         gcid.setNowId(ids[0])
         gcid.setPreId(ids[1])
 
-    for g in gcids:
-        g.show()
-
-    print '===================tracked files count = %d ===================' % len(files) 
-    print '===================commit ids count = %d ===================' % len(gcids) 
+        gcid.show()
 
 
 def getIdsByFile(f):
@@ -145,8 +143,23 @@ def getIdsByDir(d):
 
 
 def getIdsByCmid(c):
-    pass
-
+    cmd = 'git show "' + str(c) + '" | grep "diff --git"'
+    #print 'CMD = %s' % cmd
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    
+    files = []
+    for f in p.stdout:                                                                   
+        if re.search(r'"', f):
+            files.append(re.split(r'"', f)[1][2:])
+        else:
+            files.append(re.split(r' ', f)[2][2:])
+    p.wait()
+    
+    gcids = []
+    printInfo('path', 'comid-pre', 'comid-now')
+    createGcids(files, gcids)
+    print '===================tracked files count = %d ===================' % len(files) 
+    
 
 def getIdsInRepo():
     path = getPwd()
@@ -167,7 +180,6 @@ def getIdsInRepo():
             sys.exit(0)
 
     gcids = []
-    
     printInfo('path', 'comid-pre', 'comid-now')
     createGcids(files, gcids)
     print '===================tracked files count = %d ===================' % len(files) 
@@ -176,8 +188,8 @@ def getIdsInRepo():
 if "__main__" == __name__:
     try:  
         opts, args = getopt.getopt(sys.argv[1:], 'ahc:d:f:', ['help', ])
-        print 'opts = %s' % opts
-        print 'args = %s' % args
+        #print 'opts = %s' % opts
+        #print 'args = %s' % args
 
         for opt, arg in opts:
             if opt in ('-h', '--help'):

@@ -148,13 +148,14 @@ def getIdsByCmid(c):
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     
     files = []
-    for f in p.stdout:                                                                   
-        if re.search(r'"', f):
-            files.append(re.split(r'"', f)[1][2:])
-        else:
-            files.append(re.split(r' ', f)[2][2:])
+    for f in p.stdout:   
+        if re.match(r'diff --git', f):
+            if re.search(r'"', f):
+                files.append(re.split(r'"', f)[1][2:])
+            else:
+                files.append(re.split(r' ', f)[2][2:])
     p.wait()
-    
+        
     gcids = []
     printInfo('path', 'comid-pre', 'comid-now')
     createGcids(files, gcids)
@@ -198,7 +199,10 @@ if "__main__" == __name__:
             elif '-a' == opt:
                 getIdsInRepo()
             elif '-c' == opt :
-                getIdsByCmid(arg)
+                if 6 > len(arg):
+                    print 'The length of commit id must be more than 6!'
+                else:
+                    getIdsByCmid(arg)
             elif '-d' == opt:
                 if '/' == arg[-1]:
                     arg = arg[:-1]

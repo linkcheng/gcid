@@ -51,8 +51,12 @@ def printInfo(path, pre, now):
     print '|{0:<41}|\n'.format(now)
 
 
-def getPwd():
-    return os.getcwdu()
+def printWarn(files_count):
+    if files_count > 200:
+        s = 'There are too many tracked files (' + files_count + '). Are you sure to continue:(n/y)'
+        ip = raw_input(s).strip()[0]
+        if 'y' != ip:
+            sys.exit(0)
 
 
 def getRepo(path):
@@ -67,34 +71,31 @@ def getRepo(path):
     return repo
 
 
-def getGcid(file_name, gcids):
-    gcid = Gcid(file_name)
-    gcids.append(gcid)
-
-    return gcid
-
-
 def getIds(f):
-    cmd = 'git log -2 "' + str(f) + '" | grep commit'
+    cmd = 'git log -2 "' + f + '" | grep commit'
     #print 'CMD = %s' % cmd
     ids = ['-', ]
-
-    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    
     pos = 0
+
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    
+    for e in p.stderr:
+        p.wait()
+        return ['-', '-']
+
     for i in p.stdout:
         if re.match(r'^commit ', i):
             ids.insert(pos, re.split(r'commit ', i)[1][:-1])
             pos += 1
-
     p.wait()
+
     return ids
 
 
-def createGcids(files, gcids):
+def createGcids(files):
     for f in files:
-        #print 'file name = %s' % f
-        gcid = getGcid(f, gcids)
+        print 'file name = %s' % f
+        gcid = Gcid(f)
         ids = getIds(f)
         
         gcid.setNowId(ids[0])
@@ -107,20 +108,11 @@ def getIdsByFile(f):
     pass
 
 
-def getIdsByDir(d):
-    path = getPwd()
-    repo = getRepo(path)
-    
-    if not repo:
-        sys.exit(1)
-
-    path = path + '/' + d
-    ret = os.path.isdir(path)
-
-    if not ret:
+def getIdsByDir(repo, d):
+    path = os.getcwdu() + '/' + d
+    if not os.path.isdir(path):
         print '"%s" is a invalid directory, must be use a valid directory!' % d
         sys.exit(1)
-    
     os.chdir(path)
     
     r = r'^' + d + '/'
@@ -130,20 +122,14 @@ def getIdsByDir(d):
             files.append(re.split(r, f)[1])
 
     files_count = len(files)
-    if files_count > 200:
-        s = 'There are too many files (' + files_count + '). Are you sure to continue:(n/y)'
-        ip = raw_input(s).strip()[0]
-        if 'y' != ip:
-            sys.exit(0)
-
-    gcids = []
+    printWarn(files_count)
     printInfo('path', 'comid-pre', 'comid-now')
-    createGcids(files, gcids)
+    createGcids(files)
     print '===================tracked files count = %d ===================' % len(files) 
 
 
 def getIdsByCmid(c):
-    cmd = 'git show "' + str(c) + '" | grep "diff --git"'
+    cmd = 'git show "' + c + '" | grep "diff --git"'
     #print 'CMD = %s' % cmd
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     
@@ -156,37 +142,21 @@ def getIdsByCmid(c):
                 files.append(re.split(r' ', f)[2][2:])
     p.wait()
         
-    gcids = []
     printInfo('path', 'comid-pre', 'comid-now')
-    createGcids(files, gcids)
+    createGcids(files)
     print '===================tracked files count = %d ===================' % len(files) 
     
 
-def getIdsInRepo():
-    path = getPwd()
-    print '=================current path : %s =====================' % path
-
-    repo = getRepo(path)
-    if not repo:
-        sys.exit(1)
-    else:
-        os.chdir(path)
-
+def getIdsInRepo(repo):
     files = list(repo.tracked_files)
     files_count = len(files)
-    if files_count > 200:
-        s = 'There are too many files (' + files_count + '). Are you sure to continue:(n/y)'
-        ip = raw_input(s).strip()[0]
-        if 'y' != ip:
-            sys.exit(0)
-
-    gcids = []
+    printWarn(files_count)
     printInfo('path', 'comid-pre', 'comid-now')
-    createGcids(files, gcids)
+    createGcids(files)
     print '===================tracked files count = %d ===================' % len(files) 
 
 
-if "__main__" == __name__:
+def runMain(repo):
     try:  
         opts, args = getopt.getopt(sys.argv[1:], 'ahc:d:f:', ['help', ])
         #print 'opts = %s' % opts
@@ -197,7 +167,7 @@ if "__main__" == __name__:
                 usage()
                 sys.exit(1)
             elif '-a' == opt:
-                getIdsInRepo()
+                getIdsInRepo(repo)
             elif '-c' == opt :
                 if 6 > len(arg):
                     print 'The length of commit id must be more than 6!'
@@ -206,17 +176,29 @@ if "__main__" == __name__:
             elif '-d' == opt:
                 if '/' == arg[-1]:
                     arg = arg[:-1]
-                getIdsByDir(arg)
+                getIdsByDir(repo, arg)
             elif '-f' == opt:
                 getIdsByFile(arg)
             else:
-                getIdsInRepo()
+                getIdsInRepo(repo)
             break
         else:
-            getIdsInRepo()
+            getIdsInRepo(repo)
 
     except getopt.GetoptError as e:
         print 'get options error: %s ' % e
         usage()
         sys.exit(1)
 
+
+if "__main__" == __name__:
+    path = os.getcwdu()
+    print '=================current path : %s =====================' % path
+
+    repo = getRepo(path)
+    if not repo:
+        sys.exit(1)
+    else:
+        os.chdir(path)
+
+    runMain(repo)

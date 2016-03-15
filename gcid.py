@@ -74,8 +74,7 @@ def getRepo(path):
 def getIds(f):
     cmd = 'git log -2 "' + f + '" | grep commit'
     #print 'CMD = %s' % cmd
-    ids = ['-', ]
-    pos = 0
+    ids = ['-', '-']
 
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     
@@ -83,10 +82,9 @@ def getIds(f):
         p.wait()
         return ['-', '-']
 
-    for i in p.stdout:
-        if re.match(r'^commit ', i):
-            ids.insert(pos, re.split(r'commit ', i)[1][:-1])
-            pos += 1
+    for index, out in enumerate(p.stdout):
+        if re.match(r'^commit ', out):
+            ids.insert(index, re.split(r'commit ', out)[1][:-1])
     p.wait()
 
     return ids
@@ -94,7 +92,7 @@ def getIds(f):
 
 def createGcids(files):
     for f in files:
-        print 'file name = %s' % f
+        #print 'file name = %s' % f
         gcid = Gcid(f)
         ids = getIds(f)
         

@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+#coding:utf-8  
 
 from gittle import Gittle
 import subprocess
@@ -6,6 +7,7 @@ import os
 import re
 import sys
 import getopt
+import logging
 
 
 class Gcid():
@@ -84,7 +86,7 @@ def getIds(f):
 
     for index, out in enumerate(p.stdout):
         if re.match(r'^commit ', out):
-            ids.insert(index, re.split(r'commit ', out)[1][:-1])
+            ids[index] = re.split(r'commit ', out)[1][:-1]
     p.wait()
 
     return ids

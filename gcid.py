@@ -8,13 +8,14 @@ import re
 import sys
 import getopt
 import logging
-
+import requests
 
 class Gcid():
-    def __init__(self, name = '', pre_id = '-', now_id = '-'):
+    def __init__(self, name = '', pre_id = '-', now_id = '-', url = ''):
         self.__name = name
         self.__pre_id = pre_id
         self.__now_id = now_id
+        self.__url = url
     
     def getName(self):
         return self.__name
@@ -24,6 +25,9 @@ class Gcid():
 
     def getNowId(self):
         return self.__now_id
+        
+    def getUrl(self):
+        return self.__url
 
     def setName(self, name):
         self.__name = name
@@ -33,18 +37,29 @@ class Gcid():
 
     def setNowId(self, now_id):
         self.__now_id = now_id
+        
+    def setUrl(self, url):
+        self.__url = url
 
     def show(self):
         print '|{0:<64}'.format(self.__name[-63:]),
         print '|{0:<40}'.format(self.__pre_id),
         print '|{0:<41}|\n'.format(self.__now_id)
-
+        
+    def showIncludeUrl(self):
+        print self.__url
+        print self.__name[-63:]
+        print '(<%s>→' % self.__pre_id,
+        print '<%s>)' % self.__now_id
 
 def usage():  
     print '''Usage: gcid [-h] [--help]
             [-c commit_id]
             [-d directory]
-            [-f file_name]'''
+            [-f file_name]
+            [-k cookie_account]
+            note: -k must be use with -c
+            '''
 
 
 def printInfo(path, pre, now):
@@ -92,6 +107,44 @@ def getIds(f):
     return ids
 
 
+def getGcids(files):
+    gcids = []
+    
+    for i, f in enumerate(files):
+        #print 'file name = %s' % f
+        gcid = Gcid(f)
+        ids = getIds(f)
+        
+        gcid.setNowId(ids[0])
+        gcid.setPreId(ids[1])
+        
+        gcids.append(gcid)
+     
+    return gcids
+
+
+def getUrl(gcids, commit_id, cookie_account):
+    url = 'http://igerrit/gitweb?p=Doc/17Model/17Cy/21_UI.git;a=commit;h=' + commit_id
+    cookie = 'GerritAccount=' + cookie_account
+    headers = {'Cookie':cookie}
+    
+    r = requests.request('GET', url, headers = headers)
+    it = re.findall(r'<td><a class="list" href=.+?</a></td>', r.text)
+
+    for i in it:
+        s = re.findall(r'gitweb.+?;h=|Navi.+?</a>', i)
+        url = 'http://igerrit/' + s[0][:-3]
+        name = s[1][:-4]
+        short_name = re.split(r'/', name)[-1]
+        
+        for g in gcids:
+            if name == g.getName():
+                g.setName(short_name)
+                g.setUrl(url)
+                g.showIncludeUrl()
+                break
+
+
 def createGcids(files):
     for f in files:
         #print 'file name = %s' % f
@@ -125,10 +178,10 @@ def getIdsByDir(repo, d):
     printWarn(files_count)
     printInfo('path', 'comid-pre', 'comid-now')
     createGcids(files)
-    print '===================tracked files count = %d ===================' % len(files) 
+    print '\ntracked files count = %d ' % len(files) 
 
 
-def getIdsByCmid(c):
+def getIdsByCmid(c, k = None):
     cmd = 'git show "' + c + '" | grep "diff --git"'
     #print 'CMD = %s' % cmd
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
@@ -137,14 +190,20 @@ def getIdsByCmid(c):
     for f in p.stdout:   
         if re.match(r'diff --git', f):
             if re.search(r'"', f):
+                #files.append(re.split(r'/', re.split(r'"', f)[1][2:])[-1])
                 files.append(re.split(r'"', f)[1][2:])
             else:
                 files.append(re.split(r' ', f)[2][2:])
     p.wait()
         
-    printInfo('path', 'comid-pre', 'comid-now')
-    createGcids(files)
-    print '===================tracked files count = %d ===================' % len(files) 
+    if k:
+        gcids = getGcids(files)
+        getUrl(gcids, c, k)
+    else:
+        printInfo('path', 'comid-pre', 'comid-now')
+        createGcids(files)
+    print '\ntracked files count = %d' % len(files) 
+    
     
 
 def getIdsInRepo(repo):
@@ -153,38 +212,43 @@ def getIdsInRepo(repo):
     printWarn(files_count)
     printInfo('path', 'comid-pre', 'comid-now')
     createGcids(files)
-    print '===================tracked files count = %d ===================' % len(files) 
+    print '\ntracked files count = %d' % len(files) 
 
 
 def runMain(repo):
     try:  
-        opts, args = getopt.getopt(sys.argv[1:], 'ahc:d:f:', ['help', ])
+        opts, args = getopt.getopt(sys.argv[1:], 'ahc:d:f:k:', ['help', ])
         #print 'opts = %s' % opts
         #print 'args = %s' % args
+        d = dict(opts)
+        #print 'd = %s' % d
 
-        for opt, arg in opts:
-            if opt in ('-h', '--help'):
-                usage()
+        if d.has_key('-h') or d.has_key('--help'):
+            usage()
+            sys.exit(1)
+        elif d.has_key('-a'):
+            getIdsInRepo(repo)
+        elif d.has_key('-c') or d.has_key('-k'):
+            if not d.has_key('-c'):  # only -k
+                print 'If you want to use -k, you must be use with -c !'
                 sys.exit(1)
-            elif '-a' == opt:
-                getIdsInRepo(repo)
-            elif '-c' == opt :
-                if 6 > len(arg):
-                    print 'The length of commit id must be more than 6!'
-                else:
-                    getIdsByCmid(arg)
-            elif '-d' == opt:
-                if '/' == arg[-1]:
-                    arg = arg[:-1]
-                getIdsByDir(repo, arg)
-            elif '-f' == opt:
-                getIdsByFile(arg)
+                
+            if 6 > len(d['-c']):
+                print 'The length of commit id must be more than 6!'
             else:
-                getIdsInRepo(repo)
-            break
+                if d.has_key('-k'):
+                    getIdsByCmid(d['-c'], d['-k'])
+                else:
+                    getIdsByCmid(d['-c'])
+        elif d.has_key('-d'):
+            if '/' == d['-d'][-1]:
+                d['-d'] = d['-d'][:-1]
+            getIdsByDir(repo, d['-d'])
+        elif d.has_key('-f'):
+            getIdsByFile(d['-f'])
         else:
             getIdsInRepo(repo)
-
+        
     except getopt.GetoptError as e:
         print 'get options error: %s ' % e
         usage()
@@ -193,7 +257,7 @@ def runMain(repo):
 
 if "__main__" == __name__:
     path = os.getcwdu()
-    print '=================current path : %s =====================' % path
+    print '=====================current path : %s =====================\n' % path
 
     repo = getRepo(path)
     if not repo:

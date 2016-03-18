@@ -57,8 +57,9 @@ def usage():
             [-c commit_id]
             [-d directory]
             [-f file_name]
-            [-k cookie_account]
-            note: -k must be use with -c
+            [-u user_name]
+            [-p password ]
+            note: -u and -p must be use with -c
             '''
 
 
@@ -88,8 +89,8 @@ def getRepo(path):
     return repo
 
 
-def getIds(f):
-    cmd = 'git log -2 "' + f + '" | grep commit'
+def getIds(file_name):
+    cmd = 'git log -2 "' + file_name + '" | grep commit'
     #print 'CMD = %s' % cmd
     ids = ['-', '-']
 
@@ -123,13 +124,24 @@ def getGcids(files):
     return gcids
 
 
-def getUrl(gcids, commit_id, cookie_account):
+def getCookie(session, username, password):
+    url = 'http://igerrit/login/#/q/status:open'
+    data = {
+        'username':username,
+        'password':password
+    }
+    
+    response = session.post(url, data = data)
+    
+    return response.request.headers.get('Cookie')
+
+
+def getUrl(gcids, session, commit_id, cookie):
     url = 'http://igerrit/gitweb?p=Doc/17Model/17Cy/21_UI.git;a=commit;h=' + commit_id
-    cookie = 'GerritAccount=' + cookie_account
     headers = {'Cookie':cookie}
     
-    r = requests.request('GET', url, headers = headers)
-    it = re.findall(r'<td><a class="list" href=.+?</a></td>', r.text)
+    response = session.request('GET', url, headers = headers)
+    it = re.findall(r'<td><a class="list" href=.+?</a></td>', response.text)
 
     for i in it:
         s = re.findall(r'gitweb.+?;h=|Navi.+?</a>', i)
@@ -161,18 +173,18 @@ def getIdsByFile(f):
     pass
 
 
-def getIdsByDir(repo, d):
-    path = os.getcwdu() + '/' + d
+def getIdsByDir(repo, directory):
+    path = os.getcwdu() + '/' + directory
     if not os.path.isdir(path):
         print '"%s" is a invalid directory, must be use a valid directory!' % d
         sys.exit(1)
     os.chdir(path)
     
-    r = r'^' + d + '/'
+    re_str = r'^' + directory + '/'
     files = []
     for f in list(repo.tracked_files):
-        if re.match(r, f):
-            files.append(re.split(r, f)[1])
+        if re.match(re_str, f):
+            files.append(re.split(re_str, f)[1])
 
     files_count = len(files)
     printWarn(files_count)
@@ -181,8 +193,8 @@ def getIdsByDir(repo, d):
     print '\ntracked files count = %d ' % len(files) 
 
 
-def getIdsByCmid(c, k = None):
-    cmd = 'git show "' + c + '" | grep "diff --git"'
+def getIdsByCmid(commit_id, username = None, password = None):
+    cmd = 'git show "' + commit_id + '" | grep "diff --git"'
     #print 'CMD = %s' % cmd
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     
@@ -196,16 +208,18 @@ def getIdsByCmid(c, k = None):
                 files.append(re.split(r' ', f)[2][2:])
     p.wait()
         
-    if k:
+    if username and password:
         gcids = getGcids(files)
-        getUrl(gcids, c, k)
+        session = requests.Session()
+        cookie = getCookie(session, username, password)
+        print cookie
+        getUrl(gcids, session, commit_id, cookie)
     else:
         printInfo('path', 'comid-pre', 'comid-now')
         createGcids(files)
     print '\ntracked files count = %d' % len(files) 
     
     
-
 def getIdsInRepo(repo):
     files = list(repo.tracked_files)
     files_count = len(files)
@@ -217,35 +231,31 @@ def getIdsInRepo(repo):
 
 def runMain(repo):
     try:  
-        opts, args = getopt.getopt(sys.argv[1:], 'ahc:d:f:k:', ['help', ])
+        opts, args = getopt.getopt(sys.argv[1:], 'ahc:d:f:u:p:', ['help', ])
         #print 'opts = %s' % opts
         #print 'args = %s' % args
-        d = dict(opts)
+        options = dict(opts)
         #print 'd = %s' % d
 
-        if d.has_key('-h') or d.has_key('--help'):
+        if options.has_key('-h') or options.has_key('--help'):
             usage()
             sys.exit(1)
-        elif d.has_key('-a'):
+        elif options.has_key('-a'):
             getIdsInRepo(repo)
-        elif d.has_key('-c') or d.has_key('-k'):
-            if not d.has_key('-c'):  # only -k
-                print 'If you want to use -k, you must be use with -c !'
-                sys.exit(1)
-                
-            if 6 > len(d['-c']):
+        elif options.has_key('-c'):
+            if 6 > len(options['-c']):
                 print 'The length of commit id must be more than 6!'
             else:
-                if d.has_key('-k'):
-                    getIdsByCmid(d['-c'], d['-k'])
+                if options.has_key('-u') and options.has_key('-p'):
+                    getIdsByCmid(options['-c'], options['-u'], options['-p'])
                 else:
-                    getIdsByCmid(d['-c'])
-        elif d.has_key('-d'):
-            if '/' == d['-d'][-1]:
-                d['-d'] = d['-d'][:-1]
-            getIdsByDir(repo, d['-d'])
-        elif d.has_key('-f'):
-            getIdsByFile(d['-f'])
+                    getIdsByCmid(options['-c'])
+        elif options.has_key('-d'):
+            if '/' == options['-d'][-1]:
+                options['-d'] = options['-d'][:-1]
+            getIdsByDir(repo, options['-d'])
+        elif options.has_key('-f'):
+            getIdsByFile(options['-f'])
         else:
             getIdsInRepo(repo)
         

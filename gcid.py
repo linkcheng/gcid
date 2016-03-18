@@ -9,6 +9,8 @@ import sys
 import getopt
 import logging
 import requests
+import HTMLParser
+
 
 class Gcid():
     def __init__(self, name = '', pre_id = '-', now_id = '-', url = ''):
@@ -146,7 +148,10 @@ def getUrl(gcids, session, commit_id, cookie):
     for i in it:
         s = re.findall(r'gitweb.+?;h=|Navi.+?</a>', i)
         url = 'http://igerrit/' + s[0][:-3]
-        name = s[1][:-4]
+        url_name = s[1][:-4]
+        
+        html_parser = HTMLParser.HTMLParser() 
+        name = html_parser.unescape(url_name) 
         short_name = re.split(r'/', name)[-1]
         
         for g in gcids:

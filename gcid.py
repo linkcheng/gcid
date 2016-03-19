@@ -9,8 +9,9 @@ import sys
 import getopt
 import logging
 import requests
-import HTMLParser
 
+
+info_logger = logging.getLogger("info_log")
 
 class Gcid():
     def __init__(self, name = '', pre_id = '-', now_id = '-', url = ''):
@@ -54,6 +55,7 @@ class Gcid():
         print '(<%s>→' % self.__pre_id,
         print '<%s>)' % self.__now_id
 
+
 def usage():  
     print '''Usage: gcid [-h] [--help]
             [-c commit_id]
@@ -79,6 +81,24 @@ def printWarn(files_count):
             sys.exit(0)
 
 
+def loggerConf(info_logger, log_lvl = logging.DEBUG):
+    info_format = '%(asctime)s - %(filename)s - [line:%(lineno)d] - %(levelname)s - %(message)s'
+    info_logName = '/tmp/gcid.log'
+    info_formatter = logging.Formatter(info_format)
+    
+    info_logger.setLevel(log_lvl)
+
+    info_handler = logging.StreamHandler()
+    info_handler.setLevel(logging.INFO)
+
+    debug_handler = logging.FileHandler(info_logName, 'a')
+    debug_handler.setLevel(logging.DEBUG)
+    debug_handler.setFormatter(info_formatter)
+     
+    info_logger.addHandler(info_handler)
+    info_logger.addHandler(debug_handler )
+    
+
 def getRepo(path):
     from dulwich.errors import NotGitRepository
 
@@ -93,7 +113,7 @@ def getRepo(path):
 
 def getIds(file_name):
     cmd = 'git log -2 "' + file_name + '" | grep commit'
-    #print 'CMD = %s' % cmd
+    info_logger.debug('cmd = %s' % cmd)
     ids = ['-', '-']
 
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -114,7 +134,7 @@ def getGcids(files):
     gcids = []
     
     for i, f in enumerate(files):
-        #print 'file name = %s' % f
+        info_logger.debug('file name = %s' % f)
         gcid = Gcid(f)
         ids = getIds(f)
         
@@ -135,10 +155,16 @@ def getCookie(session, username, password):
     
     response = session.post(url, data = data)
     
+    if None == response.request.headers.get('Cookie'):
+        info_logger.info('username or password error!')
+        sys.exit(1)
+    
     return response.request.headers.get('Cookie')
 
 
 def getUrl(gcids, session, commit_id, cookie):
+    import HTMLParser
+    
     url = 'http://igerrit/gitweb?p=Doc/17Model/17Cy/21_UI.git;a=commit;h=' + commit_id
     headers = {'Cookie':cookie}
     
@@ -164,7 +190,7 @@ def getUrl(gcids, session, commit_id, cookie):
 
 def createGcids(files):
     for f in files:
-        #print 'file name = %s' % f
+        info_logger.debug('file name = %s' % f)
         gcid = Gcid(f)
         ids = getIds(f)
         
@@ -181,7 +207,7 @@ def getIdsByFile(f):
 def getIdsByDir(repo, directory):
     path = os.getcwdu() + '/' + directory
     if not os.path.isdir(path):
-        print '"%s" is a invalid directory, must be use a valid directory!' % d
+        info_logger.info('"%s" is a invalid directory, must be use a valid directory!' % d)
         sys.exit(1)
     os.chdir(path)
     
@@ -195,19 +221,18 @@ def getIdsByDir(repo, directory):
     printWarn(files_count)
     printInfo('path', 'comid-pre', 'comid-now')
     createGcids(files)
-    print '\ntracked files count = %d ' % len(files) 
+    info_logger.info('\ntracked files count = %d' % len(files))
 
 
 def getIdsByCmid(commit_id, username = None, password = None):
     cmd = 'git show "' + commit_id + '" | grep "diff --git"'
-    #print 'CMD = %s' % cmd
+    info_logger.debug('cmd = %s' % cmd)
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     
     files = []
     for f in p.stdout:   
         if re.match(r'diff --git', f):
             if re.search(r'"', f):
-                #files.append(re.split(r'/', re.split(r'"', f)[1][2:])[-1])
                 files.append(re.split(r'"', f)[1][2:])
             else:
                 files.append(re.split(r' ', f)[2][2:])
@@ -217,12 +242,12 @@ def getIdsByCmid(commit_id, username = None, password = None):
         gcids = getGcids(files)
         session = requests.Session()
         cookie = getCookie(session, username, password)
-        print cookie
+        info_logger.debug(cookie)
         getUrl(gcids, session, commit_id, cookie)
     else:
         printInfo('path', 'comid-pre', 'comid-now')
         createGcids(files)
-    print '\ntracked files count = %d' % len(files) 
+    info_logger.info('\ntracked files count = %d' % len(files))
     
     
 def getIdsInRepo(repo):
@@ -231,16 +256,18 @@ def getIdsInRepo(repo):
     printWarn(files_count)
     printInfo('path', 'comid-pre', 'comid-now')
     createGcids(files)
-    print '\ntracked files count = %d' % len(files) 
+    info_logger.info('\ntracked files count = %d' % len(files))
 
 
 def runMain(repo):
     try:  
-        opts, args = getopt.getopt(sys.argv[1:], 'ahc:d:f:u:p:', ['help', ])
-        #print 'opts = %s' % opts
-        #print 'args = %s' % args
+        opts, args = getopt.getopt(sys.argv[1:], 'ahpc:d:f:u:', ['help', 'config:'])
         options = dict(opts)
-        #print 'd = %s' % d
+        password = ""
+        
+        if options.has_key('-p'):
+            import getpass  
+            password = getpass.getpass('Enter password: ')  
 
         if options.has_key('-h') or options.has_key('--help'):
             usage()
@@ -249,10 +276,10 @@ def runMain(repo):
             getIdsInRepo(repo)
         elif options.has_key('-c'):
             if 6 > len(options['-c']):
-                print 'The length of commit id must be more than 6!'
+                info_logger.info('The length of commit id must be more than 6!')
             else:
                 if options.has_key('-u') and options.has_key('-p'):
-                    getIdsByCmid(options['-c'], options['-u'], options['-p'])
+                    getIdsByCmid(options['-c'], options['-u'], password)
                 else:
                     getIdsByCmid(options['-c'])
         elif options.has_key('-d'):
@@ -265,19 +292,21 @@ def runMain(repo):
             getIdsInRepo(repo)
         
     except getopt.GetoptError as e:
-        print 'get options error: %s ' % e
+        info_logger.info('get options error: %s ' % e)
         usage()
         sys.exit(1)
 
 
 if "__main__" == __name__:
     path = os.getcwdu()
-    print '=====================current path : %s =====================\n' % path
-
+    
     repo = getRepo(path)
     if not repo:
         sys.exit(1)
     else:
         os.chdir(path)
 
+    loggerConf(info_logger)
     runMain(repo)
+    info_logger.info('current path : %s\n' % path)
+    

@@ -1,15 +1,16 @@
 #!/usr/bin/env python
-#coding:utf-8  
+# coding:utf-8  
+# @Author: linkcheng
+# function：get commit id and files' url
 
-from gittle import Gittle
-import subprocess
 import os
 import re
 import sys
+import subprocess
 import getopt
 import logging
 import requests
-
+from gittle import Gittle
 
 info_logger = logging.getLogger("info_log")
 
@@ -45,43 +46,49 @@ class Gcid():
         self.__url = url
 
     def show(self):
-        print '|{0:<64}'.format(self.__name[-63:]),
-        print '|{0:<40}'.format(self.__pre_id),
-        print '|{0:<41}|\n'.format(self.__now_id)
+        sys.stdout.write('|{0:<64}'.format(self.__name[-63:]))
+        sys.stdout.write('|{0:<40}'.format(self.__pre_id))
+        sys.stdout.write('|{0:<41}|\n'.format(self.__now_id))
         
     def showIncludeUrl(self):
-        print self.__url
-        print self.__name[-63:]
-        print '(<%s>→' % self.__pre_id,
-        print '<%s>)' % self.__now_id
+        sys.stdout.write('%s\n' % self.__url)
+        sys.stdout.write('%s\n' % self.__name)
+        sys.stdout.write('(<%s>→' % self.__pre_id)
+        sys.stdout.write('<%s>)\n' % self.__now_id)
 
 
-def usage():  
-    print '''Usage: gcid [-h] [--help]
+def usage():
+    '''
+    the usage of the gcid.
+    '''
+    sys.stdout.write('''Usage: gcid [-h] [--help]
             [-c commit_id]
             [-d directory]
             [-f file_name]
             [-u user_name]
             [-p password ]
-            note: -u and -p must be use with -c
-            '''
+            [--config=/etc/gcid.conf ]
+            note: -u and -p or --config must be use with -c''')
 
 
 def printInfo(path, pre, now):
-    print '|{0:<64}'.format(path),
-    print '|{0:<40}'.format(pre),
-    print '|{0:<41}|\n'.format(now)
+    sys.stdout.write('|{0:<64}'.format(path))
+    sys.stdout.write('|{0:<40}'.format(pre))
+    sys.stdout.write('|{0:<41}|\n'.format(now))
 
 
 def printWarn(files_count):
     if files_count > 200:
         s = 'There are too many tracked files (' + files_count + '). Are you sure to continue:(n/y)'
-        ip = raw_input(s).strip()[0]
+        ip = input(s).strip()[0]
         if 'y' != ip:
             sys.exit(0)
 
 
 def loggerConf(info_logger, log_lvl = logging.DEBUG):
+    '''
+    logging module config.
+    '''
     info_format = '%(asctime)s - %(filename)s - [line:%(lineno)d] - %(levelname)s - %(message)s'
     info_logName = '/tmp/gcid.log'
     info_formatter = logging.Formatter(info_format)
@@ -100,37 +107,44 @@ def loggerConf(info_logger, log_lvl = logging.DEBUG):
     
 
 def getRepo(path):
+    '''
+    get local repo.
+    '''
     from dulwich.errors import NotGitRepository
 
     repo = None
     try:
         repo = Gittle(path)
     except NotGitRepository as e:
-        print e
+        info_logger.info(e)
     
     return repo
 
 
 def getIds(file_name):
+    '''
+    get file's commit lastest id by the file name.
+    '''
     cmd = 'git log -2 "' + file_name + '" | grep commit'
     info_logger.debug('cmd = %s' % cmd)
     ids = ['-', '-']
 
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    
+    p.wait()
     for e in p.stderr:
-        p.wait()
-        return ['-', '-']
+        return ids
 
     for index, out in enumerate(p.stdout):
         if re.match(r'^commit ', out):
             ids[index] = re.split(r'commit ', out)[1][:-1]
-    p.wait()
 
     return ids
 
 
 def getGcids(files):
+    '''
+    get Gcid by the files' name, it's a list.
+    '''
     gcids = []
     
     for i, f in enumerate(files):
@@ -146,7 +160,29 @@ def getGcids(files):
     return gcids
 
 
+def getConfInfo(path):
+    '''
+    get username and password by the conf file.
+    '''
+    if not os.path.isfile(path):
+        info_logger.info('%s is not exist!\n' % path)
+        sys.exit(1)
+        
+    with open(path, 'r') as fp:
+        # file format is 
+        # username=******
+        # password=******
+        username = fp.readline().split('=')[1].strip(' \n')
+        password = fp.readline().split('=')[1].strip(' ')[:-1]
+        info_logger.debug('username = %s' % username)
+    
+    return username, password
+    
+
 def getCookie(session, username, password):
+    '''
+    get cookie for geturl by username, password.
+    '''
     url = 'http://igerrit/login/#/q/status:open'
     data = {
         'username':username,
@@ -163,6 +199,9 @@ def getCookie(session, username, password):
 
 
 def getUrl(gcids, session, commit_id, cookie):
+    '''
+    get url for Gcids by commit_id, cookie.
+    '''
     import HTMLParser
     
     url = 'http://igerrit/gitweb?p=Doc/17Model/17Cy/21_UI.git;a=commit;h=' + commit_id
@@ -189,6 +228,9 @@ def getUrl(gcids, session, commit_id, cookie):
 
 
 def createGcids(files):
+    '''
+    create Gcid for every file and show the info.
+    '''
     for f in files:
         info_logger.debug('file name = %s' % f)
         gcid = Gcid(f)
@@ -201,10 +243,16 @@ def createGcids(files):
 
 
 def getIdsByFile(f):
+    '''
+    get id for the file
+    '''
     pass
 
 
 def getIdsByDir(repo, directory):
+    '''
+    get ids for every tracked file in the directory.
+    '''
     path = os.getcwdu() + '/' + directory
     if not os.path.isdir(path):
         info_logger.info('"%s" is a invalid directory, must be use a valid directory!' % d)
@@ -221,47 +269,64 @@ def getIdsByDir(repo, directory):
     printWarn(files_count)
     printInfo('path', 'comid-pre', 'comid-now')
     createGcids(files)
-    info_logger.info('\ntracked files count = %d' % len(files))
+    info_logger.info('tracked files count = %d' % len(files))
 
 
 def getIdsByCmid(commit_id, username = None, password = None):
+    '''
+    get ids for every tracked file in the directory.
+    '''
     cmd = 'git show "' + commit_id + '" | grep "diff --git"'
     info_logger.debug('cmd = %s' % cmd)
     p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    p.wait()
     
     files = []
     for f in p.stdout:   
         if re.match(r'diff --git', f):
+            info_logger.debug('f = %s' % f)
+            # diff --git a/Navi/Design/BasicDesign/Route/JA212&JA224&JA224AA L1.5_Route_BDS_(RouteDestSort).asta \
+            # b/Navi/Design/BasicDesign/Route/JA212&JA224&JA224AA L1.5_Route_BDS_(RouteDestSort).asta\n
             if re.search(r'"', f):
                 files.append(re.split(r'"', f)[1][2:])
             else:
-                files.append(re.split(r' ', f)[2][2:])
-    p.wait()
+                info_logger.debug(re.split(r' b', f))
+                # if ['diff --git a/Navi/Design/BasicDesign/Route/JA212&JA224&JA224AA L1.5_Route_BDS_(RouteDestSort).asta', \
+                # '/Navi/Design/BasicDesign/Route/JA212&JA224&JA224AA L1.5_Route_BDS_(RouteDestSort).asta\n']
+                # then split first and last char
+                files.append(re.split(r' b', f)[1][1:-1])
         
     if username and password:
-        gcids = getGcids(files)
         session = requests.Session()
         cookie = getCookie(session, username, password)
         info_logger.debug(cookie)
+        
+        gcids = getGcids(files)
         getUrl(gcids, session, commit_id, cookie)
     else:
         printInfo('path', 'comid-pre', 'comid-now')
         createGcids(files)
-    info_logger.info('\ntracked files count = %d' % len(files))
+    info_logger.info('tracked files count = %d' % len(files))
     
     
 def getIdsInRepo(repo):
+    '''
+    get ids for every tracked file in the repo.
+    '''
     files = list(repo.tracked_files)
     files_count = len(files)
     printWarn(files_count)
     printInfo('path', 'comid-pre', 'comid-now')
     createGcids(files)
-    info_logger.info('\ntracked files count = %d' % len(files))
+    info_logger.info('tracked files count = %d' % len(files))
 
 
 def runMain(repo):
+    '''
+    main thread.control the swtich by options.
+    '''
     try:  
-        opts, args = getopt.getopt(sys.argv[1:], 'ahpc:d:f:u:', ['help', 'config:'])
+        opts, args = getopt.getopt(sys.argv[1:], 'ahpc:d:f:u:', ['help', 'config='])
         options = dict(opts)
         password = ""
         
@@ -278,10 +343,17 @@ def runMain(repo):
             if 6 > len(options['-c']):
                 info_logger.info('The length of commit id must be more than 6!')
             else:
+                import time
+                start = time.time()
                 if options.has_key('-u') and options.has_key('-p'):
                     getIdsByCmid(options['-c'], options['-u'], password)
+                elif options.has_key('--config'):
+                    uname, passwd = getConfInfo(options['--config'])
+                    getIdsByCmid(options['-c'], uname, passwd)
                 else:
                     getIdsByCmid(options['-c'])
+                end = time.time()
+                info_logger.info('△time : %s' % str(end - start))
         elif options.has_key('-d'):
             if '/' == options['-d'][-1]:
                 options['-d'] = options['-d'][:-1]

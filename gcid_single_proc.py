@@ -10,12 +10,7 @@ import subprocess
 import getopt
 import logging
 import requests
-import time
-import HTMLParser
 from gittle import Gittle
-from multiprocessing import Process, Queue 
-from functools import wraps
-
 
 info_logger = logging.getLogger("info_log")
 
@@ -89,19 +84,6 @@ def printWarn(files_count):
         if 'y' != ip:
             sys.exit(0)
 
-  
-def fn_timer(function):
-    @wraps(function)
-    def function_timer(*args, **kwargs):
-        start = time.time()
-        result = function(*args, **kwargs)
-        end = time.time()
-        
-        info_logger.debug('Total time running %s: %s seconds' % (function.func_name, str(end-start)))
-        return result
-        
-    return function_timer
-
 
 def loggerConf(info_logger, log_lvl = logging.DEBUG):
     '''
@@ -139,7 +121,6 @@ def getRepo(path):
     return repo
 
 
-@fn_timer
 def getIds(file_name):
     '''
     get file's commit lastest id by the file name.
@@ -160,43 +141,12 @@ def getIds(file_name):
     return ids
 
 
-@fn_timer
-def getFiles(queue, commit_id):
-    '''
-    get file by commit id.
-    '''
-    
-    cmd = 'git show "' + commit_id + '" | grep "diff --git"'
-    info_logger.debug('cmd = %s' % cmd)
-    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    p.wait()
-    
-    files = []
-    for f in p.stdout:   
-        if re.match(r'diff --git', f):
-            info_logger.debug('f = %s' % f)
-            # diff --git a/Navi/Design/BasicDesign/Route/JA212&JA224&JA224AA L1.5_Route_BDS_(RouteDestSort).asta \
-            # b/Navi/Design/BasicDesign/Route/JA212&JA224&JA224AA L1.5_Route_BDS_(RouteDestSort).asta\n
-            if re.search(r'"', f):
-                files.append(re.split(r'"', f)[1][2:])
-            else:
-                info_logger.debug(re.split(r' b', f))
-                # if ['diff --git a/Navi/Design/BasicDesign/Route/JA212&JA224&JA224AA L1.5_Route_BDS_(RouteDestSort).asta', \
-                # '/Navi/Design/BasicDesign/Route/JA212&JA224&JA224AA L1.5_Route_BDS_(RouteDestSort).asta\n']
-                # then split first and last char
-                files.append(re.split(r' b', f)[1][1:-1])
-                
-    queue.put(files)
-    
-    
-@fn_timer
 def getGcids(files):
     '''
     get Gcid by the files' name, it's a list.
     '''
-    
     gcids = []
-
+    
     for i, f in enumerate(files):
         info_logger.debug('file name = %s' % f)
         gcid = Gcid(f)
@@ -210,7 +160,6 @@ def getGcids(files):
     return gcids
 
 
-@fn_timer
 def getConfInfo(path):
     '''
     get username and password by the conf file.
@@ -230,12 +179,10 @@ def getConfInfo(path):
     return username, password
     
 
-@fn_timer
-def getCookie(queue, session, username, password):
+def getCookie(session, username, password):
     '''
     get cookie for geturl by username, password.
     '''
-    start = time.time()
     url = 'http://igerrit/login/#/q/status:open'
     data = {
         'username':username,
@@ -245,27 +192,24 @@ def getCookie(queue, session, username, password):
     response = session.post(url, data = data)
     
     if None == response.request.headers.get('Cookie'):
-        queue.put(None)
+        info_logger.info('username or password error!')
         sys.exit(1)
     
-    queue.put(response.request.headers.get('Cookie'))
+    return response.request.headers.get('Cookie')
 
 
-@fn_timer
 def getUrl(gcids, session, commit_id, cookie):
     '''
     get url for Gcids by commit_id, cookie.
     '''
-
+    import HTMLParser
+    
     url = 'http://igerrit/gitweb?p=Doc/17Model/17Cy/21_UI.git;a=commit;h=' + commit_id
     headers = {'Cookie':cookie}
     
     response = session.request('GET', url, headers = headers)
-    time_resp = response.elapsed.microseconds
-    info_logger.debug("time_resp = %s" % str(time_resp/1000000.0))
-    
     it = re.findall(r'<td><a class="list" href=.+?</a></td>', response.text)
-    
+
     for i in it:
         s = re.findall(r'gitweb.+?;h=|Navi.+?</a>', i)
         url = 'http://igerrit/' + s[0][:-3]
@@ -282,7 +226,7 @@ def getUrl(gcids, session, commit_id, cookie):
                 g.showIncludeUrl()
                 break
 
-@fn_timer
+
 def createGcids(files):
     '''
     create Gcid for every file and show the info.
@@ -305,7 +249,6 @@ def getIdsByFile(f):
     pass
 
 
-@fn_timer
 def getIdsByDir(repo, directory):
     '''
     get ids for every tracked file in the directory.
@@ -329,62 +272,55 @@ def getIdsByDir(repo, directory):
     info_logger.info('tracked files count = %d' % len(files))
 
 
-@fn_timer
 def getIdsByCmid(commit_id, username = None, password = None):
     '''
     get ids for every tracked file in the directory.
     '''
+    cmd = 'git show "' + commit_id + '" | grep "diff --git"'
+    info_logger.debug('cmd = %s' % cmd)
+    p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    p.wait()
     
-    proc_queue = Queue()
-    
-    proc_files = Process(target=getFiles, args=(proc_queue, commit_id)) 
-    proc_files.start()
-   
+    files = []
+    for f in p.stdout:   
+        if re.match(r'diff --git', f):
+            info_logger.debug('f = %s' % f)
+            # diff --git a/Navi/Design/BasicDesign/Route/JA212&JA224&JA224AA L1.5_Route_BDS_(RouteDestSort).asta \
+            # b/Navi/Design/BasicDesign/Route/JA212&JA224&JA224AA L1.5_Route_BDS_(RouteDestSort).asta\n
+            if re.search(r'"', f):
+                files.append(re.split(r'"', f)[1][2:])
+            else:
+                info_logger.debug(re.split(r' b', f))
+                # if ['diff --git a/Navi/Design/BasicDesign/Route/JA212&JA224&JA224AA L1.5_Route_BDS_(RouteDestSort).asta', \
+                # '/Navi/Design/BasicDesign/Route/JA212&JA224&JA224AA L1.5_Route_BDS_(RouteDestSort).asta\n']
+                # then split first and last char
+                files.append(re.split(r' b', f)[1][1:-1])
+        
     if username and password:
         session = requests.Session()
-        
-        proc_cookie = Process(target=getCookie, args=(proc_queue, session, username, password))  
-        proc_cookie.start()
-        proc_get = proc_queue.get()
-        
-        if type(proc_get) is list:
-            files = proc_get
-            cookie = proc_queue.get()
-            if cookie == None:
-                info_logger.info('username or password error!')
-                sys.exit(1)
-        else:
-            cookie = proc_get
-            files = proc_queue.get()
-        
-        gcids = getGcids(files)
+        cookie = getCookie(session, username, password)
         info_logger.debug(cookie)
         
+        gcids = getGcids(files)
         getUrl(gcids, session, commit_id, cookie)
-        info_logger.info('tracked files count = %d' % len(files))
     else:
         printInfo('path', 'comid-pre', 'comid-now')
-        files = proc_queue.get()
         createGcids(files)
-        info_logger.info('tracked files count = %d' % len(files))
+    info_logger.info('tracked files count = %d' % len(files))
     
-
-@fn_timer   
+    
 def getIdsInRepo(repo):
     '''
     get ids for every tracked file in the repo.
     '''
     files = list(repo.tracked_files)
     files_count = len(files)
-    
     printWarn(files_count)
     printInfo('path', 'comid-pre', 'comid-now')
-    
     createGcids(files)
     info_logger.info('tracked files count = %d' % len(files))
 
 
-@fn_timer
 def runMain(repo):
     '''
     main thread.control the swtich by options.
@@ -392,10 +328,12 @@ def runMain(repo):
     try:  
         opts, args = getopt.getopt(sys.argv[1:], 'ahpc:d:f:u:', ['help', 'config='])
         options = dict(opts)
+        password = ""
         
         if options.has_key('-p'):
             import getpass  
             password = getpass.getpass('Enter password: ')  
+
         if options.has_key('-h') or options.has_key('--help'):
             usage()
             sys.exit(1)
@@ -405,6 +343,8 @@ def runMain(repo):
             if 6 > len(options['-c']):
                 info_logger.info('The length of commit id must be more than 6!')
             else:
+                import time
+                start = time.time()
                 if options.has_key('-u') and options.has_key('-p'):
                     getIdsByCmid(options['-c'], options['-u'], password)
                 elif options.has_key('--config'):
@@ -412,6 +352,8 @@ def runMain(repo):
                     getIdsByCmid(options['-c'], uname, passwd)
                 else:
                     getIdsByCmid(options['-c'])
+                end = time.time()
+                info_logger.info('△time : %s' % str(end - start))
         elif options.has_key('-d'):
             if '/' == options['-d'][-1]:
                 options['-d'] = options['-d'][:-1]

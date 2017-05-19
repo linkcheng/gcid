@@ -50,8 +50,8 @@ def getGcid(file_name, gcids = []):
     return gcid
 
 def test():
-    repo = Gittle('/home/zhenglong/share/mygithub/python_demo')
-    #repo = Gittle('/home/zhenglong/proj/17cy_0310/packages/QmlApps/Lexus/Navi')
+    repo = Gittle('/')
+    #repo = Gittle('/')
     coms = repo.commits()
     gcids = []
  

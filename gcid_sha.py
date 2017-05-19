@@ -3,7 +3,7 @@
 from gittle import Gittle
 
 if __name__ == '__main__':
-    repo = Gittle('/home/zhenglong/share/mygithub/python_demo')
+    repo = Gittle('/')
     fileList = list(repo.tracked_files)
 
     print '|{0:<45}|'.format('path'),
